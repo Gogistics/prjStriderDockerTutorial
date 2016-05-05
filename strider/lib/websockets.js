@@ -1,0 +1,280 @@
+var io = require('socket.io')
+  , everypaas = require('everypaas')
+  , gravatar = require('gravatar')
+  , config = require('./config')
+  , express = require('express')
+  , cookieParser = require('cookie-parser')
+  , models = require('./models')
+  , expressParser = cookieParser(config.session_secret)
+  , Project = models.Project
+  , User = models.User
+  , Job = models.Job
+
+  , common = require('./common')
+  , jobs = require('./jobs')
+  , utils = require('./utils')
+
+var user_websocket_map = {}
+
+module.exports = UserSockets
+
+function authorize(sessionStore, data, next) {
+  if (data.handshake.headers.cookie) {
+    var req = data.handshake;
+    expressParser(req, {}, function(){
+      var sessionID = req.signedCookies['connect.sid'];
+      sessionStore.get(sessionID, function(err, session) {
+        if (err || !session) {
+          next(new Error('not authorized'));
+        } else {
+          req.session = session;
+          next();
+        }
+      });
+    });
+  } else {
+    return next(new Error('not authorized'));
+  }
+}
+
+/*
+ * websockets.init()
+ *
+ * Initialize the Socket.io server.
+ */
+// sio: socketio server. ex: io.listen(server)
+function UserSockets(sio, sessionStore) {
+  this.sio = sio
+  this.sockets = {}
+  this.sessionStore = sessionStore
+  //sio.enable('browser client minification');  // send minified client
+  //sio.enable('browser client etag');          // apply etag caching logic based on version number
+  //sio.enable('browser client gzip');
+  //sio.set('log level', 1);
+  //sio.set('authorization', authorize.bind(this, sessionStore))
+  sio.use(authorize.bind(this, sessionStore));
+  sio.sockets.on('connection', this.connected.bind(this))
+}
+
+UserSockets.prototype =  {
+  addSocket: function (uid, socket) {
+    if (!this.sockets[uid]) {
+      this.sockets[uid] = new UserSocket(uid)
+    }
+    this.sockets[uid].add(socket)
+  },
+  // -> true if the socket was found and removed. false if it wasn't found
+  removeSocket: function (uid, socket) {
+    var socks = this.sockets[uid]
+    if (!socks) return false
+    return socks.remove(socket)
+  },
+  // socket callback. Adds a new socket
+  connected: function (socket) {
+    var session = socket.handshake.session;
+    if (session && session.passport) {
+      this.addSocket(session.passport.user, socket);
+    } else {
+      console.debug("Websocket connection does not have authorization - nothing to do.");
+    }
+  },
+  // send a message to a number of users
+  // send([uid, uid, ...], arguments)
+  send: function (users, args) {
+    for (var i=0; i<users.length; i++) {
+      if (!this.sockets[users[i]]) continue;
+      this.sockets[users[i]].emit(args)
+    }
+  },
+  // send a message to a number of users running callback to get args
+  // send([uid, uid, ...], callback)
+  sendEach: function (users, fn) {
+    for (var i=0; i<users.length; i++) {
+      if (!this.sockets[users[i]] || !this.sockets[users[i]].user) continue;
+      this.sockets[users[i]].emit(fn(this.sockets[users[i]].user))
+    }
+  },
+  // send a public message - to all /but/ the specified users
+  sendPublic: function (users, args) {
+    for (var id in this.sockets) {
+      if (users.indexOf(id) !== -1) continue;
+      this.sockets[id].emit(args)
+    }
+  }
+}
+
+function kickoffJob(user, project, type, branch) {
+  var now = new Date()
+    , trigger
+    , job
+  branch = branch || 'master'
+  trigger = {
+    type: 'manual',
+    author: {
+      id: user._id,
+      email: user.email,
+      image: gravatar.url(user.email, {}, true)
+    },
+    message: type === 'TEST_AND_DEPLOY' ? 'Manually Redeploying' : 'Manually Retesting',
+    timestamp: now,
+    source: {type: 'UI', page: 'unknown'}
+  }
+  if (branch !== 'master') {
+    trigger.message += ' ' + branch
+  }
+  job = {
+    type: type,
+    user_id: user._id,
+    project: project,
+    ref: {branch: branch},
+    trigger: trigger,
+    created: now
+  }
+  common.emitter.emit('job.prepare', job)
+}
+
+function UserSocket(userid) {
+  this.userid = userid
+  this.sockets = []
+}
+
+function waiter(socket, event) {
+  var wait = {
+    event: event,
+    calls: [],
+    handler: function () {
+      wait.calls.push(arguments)
+    }
+  }
+  return wait
+}
+
+function unWait(socket, waiter, handler) {
+  socket.removeListener(waiter.event, waiter.handler)
+  socket.on(waiter.event, handler)
+  for (var i=0; i<waiter.calls.length; i++) {
+    handler.apply(null, waiter.calls[i])
+  }
+}
+
+UserSocket.prototype = {
+  add: function (socket) {
+    var waiters = {}
+      , self = this
+    for (var name in this.events) {
+      socket.on(name, (waiters[name] = waiter(socket, name)).handler)
+    }
+    this.getUser(function () {
+      for (var name in self.events) {
+        unWait(socket, waiters[name], self.events[name].bind(self))
+      }
+    })
+    this.sockets.push(socket)
+  },
+  remove: function (socket) {
+    var idx = this.sockets.indexOf(socket)
+    if (idx === -1) return false
+    this.sockets.splice(idx, 1)
+    return true
+  },
+  // args are passed to an `apply` call on each socket
+  emit: function (args) {
+    for (var i=0; i<this.sockets.length; i++) {
+      this.sockets[i].emit.apply(this.sockets[i], args)
+    }
+  },
+  on: function () {
+    for (var i=0; i<this.sockets.length; i++) {
+      this.sockets[i].on.apply(this.sockets[i], arguments)
+    }
+  },
+  getUser: function (done) {
+    if (!this.userid) return done()
+    var self = this
+    User.findById(this.userid, function (err, user) {
+      if (err) console.error('failed to get user - socket', err)
+      if (!user) {
+        console.error("user not found for the websocket - there's something strange going on w/ websocket auth. User Id: ", self.userid)
+        self.emit(['auth.failed'])
+        return
+      }
+      self.user = user
+      done()
+    })
+  },
+  events: {
+    'dashboard:jobs': function (done) {
+      var self = this
+      jobs.latestJobs(this.user, function (err, jobs) {
+        done(jobs)
+      })
+    },
+    'dashboard:unknown': function (id, done) {
+      var user = this.user
+      Job.findById(id).lean().exec(function (err, job) {
+        if (err || !job) return console.error('[unknownjob] error getting job', id, err)
+        Project.findOne({name: job.project.toLowerCase()}).lean().exec(function (err, project) {
+          if (err || !project) return console.error('[unknownjob] error getting project', id, err)
+          var njob = jobs.small(job)
+          njob.project = utils.sanitizeProject(project)
+          njob.project.access_level = User.projectAccessLevel(user, project);
+          // this will be filled in
+          njob.project.prev = []
+          done(njob)
+        })
+      })
+    },
+    'build:job': function (id, done) {
+      var user = this.user
+      Job.findById(id).lean().exec(function (err, job) {
+        if (err) return console.error('Error retrieving job', id, err.message, err.stack)
+        if (!job) return console.error('Job not found', id)
+        Project.findOne({name: job.project.toLowerCase()}).lean().exec(function (err, project) {
+          if (err || !project) return console.error('Error getting project', job.project, err)
+          job.status = jobs.status(job)
+          job.project = utils.sanitizeProject(project)
+          job.project.access_level = User.projectAccessLevel(user, project);
+          job.project.prev = []
+          done(job)
+        })
+      })
+    },
+    'build:unknown': function (id, done) {
+      // TODO: query the responsible runner to get the current output, etc.
+    },
+    'test': function (project, branch) {
+      var user = this.user
+      Project.findOne({name: project}).lean().exec(function (err, project) {
+        if (User.projectAccessLevel(user, project) > 0) {
+          kickoffJob(user, project.name, 'TEST_ONLY', branch)
+        }
+      });
+    },
+    'deploy': function (project, branch) {
+      var user = this.user
+      Project.findOne({name: project}).lean().exec(function (err, project) {
+        if (User.projectAccessLevel(user, project) > 0) {
+          kickoffJob(user, project.name, 'TEST_AND_DEPLOY', branch)
+        }
+      });
+    },
+    'cancel': function (id) {
+      console.log('Got a request to cancel', id)
+      var self = this
+      Job.findById(id).lean().exec(function (err, job) {
+        if (err || !job) return console.error('[canceljob] error getting job', id, err)
+        Project.findOne({name: job.project.toLowerCase()}).lean().exec(function (err, project) {
+          if (err || !project) return console.error('[canceljob] error getting project', id, err)
+          if (!job) return console.error('[canceljob] Job not found', id)
+          if (User.projectAccessLevel(self.user, project) > 0) {
+            common.emitter.emit('job.cancel', id)
+          }
+        })
+      })
+    }
+  }
+}
+
+module.exports.init = function(server, session_store){
+  return common.ws = new UserSockets(io.listen(server), session_store)
+}
