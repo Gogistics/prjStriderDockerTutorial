@@ -111,7 +111,6 @@
     "strider-github": "^2.3.0",
     "strider-gitlab": "^1.2.3",
     "strider-heroku": "^0.1.1",
-    "strider-hipchat": "^1.0.x",
     "strider-mailer": "^0.2.0",
     "strider-metadata": "^0.0.3",
     "strider-node": "^0.6.6",
