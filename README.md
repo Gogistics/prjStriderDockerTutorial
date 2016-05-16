@@ -9,6 +9,14 @@
 4. Register GitHub Application
 In order to access from third-party application, a new GitHub application should be created.
 
+5. Build Docker image and then run container
+
+```$ docker build -t [MY_IMAGE_TAG_NAME] .```
+
+```$ docker run --name [MY_CONTAINER_NAME] -e "DB_URI=mongodb://[MY_USER_NAMR]:[MY_USER_PWD]@[MY_MONGO_URL]:[MY_MONGO_PORT]/[MY_DB]" -p 9999:3000 -d [MY_IMAGE_TAG_NAME]```
+
+NOTE: if the admin account is not set up, then ssh into container and change dir to /opt/strider/src and execute bin/strider addUser to create a admin account
+
 ======
 
 Reference Links:
