@@ -32,6 +32,8 @@ RUN apt-get update && \
     pip install supervisor-stdout && \
     sed -i 's/^\(\[supervisord\]\)$/\1\nnodaemon=true/' /etc/supervisor/supervisord.conf && \
     npm cache clean -f && npm install -g n && n stable && node -v && \
+    apt-get install -y clamav clamav-daemon && \
+    freshclam && \
     apt-get update && \
     apt-get clean
 
