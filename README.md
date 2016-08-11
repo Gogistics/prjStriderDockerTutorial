@@ -32,7 +32,6 @@ $ docker build -t alantai/my_mongodb_standalone .
 $ docker run --name mongo_standalone -p [MY_HOST_PORT]:27017 -d alantai/my_standalone_mongodb
 ```
 
-
 ```
 $ cp my_docker_mongo /etc/init.d/
 
@@ -50,12 +49,21 @@ In order to access from third-party application, a new GitHub application should
 
 6. Build Docker image and then run container
 
-```$ docker build -t [MY_IMAGE_TAG_NAME] .```
+```
+$ docker build -t [MY_IMAGE_TAG_NAME] .
 
-```$ docker run --name [MY_CONTAINER_NAME] -e "DB_URI=mongodb://[MY_USER_NAMR]:[MY_USER_PWD]@[MY_MONGO_URL]:[MY_MONGO_PORT]/[MY_DB]" -p 9999:3000 -d [MY_IMAGE_TAG_NAME]```
+$ docker run --name [MY_CONTAINER_NAME] -e "DB_URI=mongodb://[MY_USER_NAMR]:[MY_USER_PWD]@[MY_MONGO_URL]:[MY_MONGO_PORT]/[MY_DB]" -p 9999:3000 -d [MY_IMAGE_TAG_NAME]
+```
+
+7. Once Strider is running up, the DNS should be updated to be consistent with the previous setting of **Homepage URL** on GitHub **Register GitHub Application** page and allow users to access the application.
+
+8. Let's add a project from GitHub for CI/CD demo
+
+9. Add plugins for the project added from GitHub; in this tutorial, three plugins will be added for demo. One is **SSH Deploy**, another one is **Custom Scripts**, and the other one is **Email Notification**.
+
 
 NOTE:
-1. If the admin account is not set up, then ssh into container and change dir to /opt/strider/src and execute bin/strider addUser to create a admin account
+1. If the admin account is not set up, then ssh into container and change dir to /opt/strider/src and execute **strider addUser** to create a admin account
 
 2. If you are going to install plugins before docker image is created, 
 
