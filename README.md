@@ -58,9 +58,7 @@ $ update-rc.d my_docker_mongo defaults
 
 7. Once Strider is running up, the DNS should be updated to be consistent with the previous setting of **Homepage URL** on GitHub **Register GitHub Application** page and allow users to access the application.
 
-8. Let's add a project from GitHub for CI/CD demo
-
-9. Add plugins for the project added from GitHub; in this tutorial, three plugins will be added for demo. One is **SSH Deploy**, another one is **Custom Scripts**, and the other one is **Email Notification**.
+8. Let's add a project from GitHub for CI/CD practice and the project repo. is [here](https://github.com/Gogistics/prjNodeStriderDemo)
 
 
 NOTE:
@@ -81,3 +79,4 @@ Reference Links:
 
 [Google's SMTP Server](https://www.digitalocean.com/community/tutorials/how-to-use-google-s-smtp-server)
 
+[Mailgun SMTP](https://help.mailgun.com/hc/en-us/articles/203380100-Where-can-I-find-my-API-key-and-SMTP-credentials-)
