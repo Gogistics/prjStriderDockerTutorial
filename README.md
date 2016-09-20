@@ -63,6 +63,10 @@ NOTE:
 
 Reference Links:
 
+[Strider CD](https://strider-cd.github.io/)
+
+[StriderCD Book 1.4 documentation](http://strider.readthedocs.io/en/latest/intro.html)
+
 [Strider Tutorial by Marcus Pöhls](https://futurestud.io/blog/strider-getting-started-platform-overview)
 
 [Strider on GitHub](https://github.com/Strider-CD/strider)
